@@ -874,59 +874,114 @@
       showToast('Nessun dato da esportare', 'error');
       return;
     }
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+      console.error('jsPDF non è stato caricato correttamente', window.jspdf);
+      showToast('Errore caricamento libreria PDF', 'error');
+      return;
+    }
+
+    let doc;
+    try {
+      const { jsPDF } = window.jspdf;
+      doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    } catch (error) {
+      console.error('Impossibile inizializzare jsPDF', error);
+      showToast('Impossibile avviare l\'export PDF', 'error');
+      return;
+    }
+
+    const hasAutoTable = typeof doc.autoTable === 'function';
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const marginX = 40;
     const title = `Ordini Live – ${new Date().toLocaleString('it-IT')}`;
     doc.setFontSize(18);
-    doc.text(title, 40, 50);
+    doc.text(title, marginX, 50);
     let y = 80;
     let overallTotal = 0;
 
+    const renderPageFooter = () => {
+      doc.setFontSize(10);
+      const pageStr = `Pagina ${doc.internal.getNumberOfPages()}`;
+      doc.text(pageStr, pageWidth - marginX, pageHeight - 20, { align: 'right' });
+    };
+
+    const ensureSpace = (amount = 0) => {
+      if (y + amount > pageHeight - 60) {
+        renderPageFooter();
+        doc.addPage();
+        y = 60;
+      }
+    };
+
     for (const group of allData) {
+      ensureSpace(80);
       const clientTitle = `${group.client.cognome} ${group.client.nome}`;
       doc.setFontSize(16);
-      doc.text(clientTitle, 40, y);
-      y += 10;
+      doc.text(clientTitle, marginX, y);
+      y += 14;
+
       const rows = group.purchases.map(p => [
         p.prodotto,
         formatCurrency(p.prezzo),
         capitalize(p.stato),
         formatTime(p.timestamp)
       ]);
-      doc.autoTable({
-        startY: y + 10,
-        head: [['Prodotto', 'Prezzo', 'Stato', 'Ora']],
-        body: rows,
-        margin: { left: 40, right: 40 },
-        styles: { fontSize: 11 },
-        theme: 'striped',
-        didDrawPage: (data) => {
-          doc.setFontSize(10);
-          const pageStr = `Pagina ${doc.internal.getNumberOfPages()}`;
-          doc.text(pageStr, doc.internal.pageSize.getWidth() - 40, doc.internal.pageSize.getHeight() - 20, { align: 'right' });
+
+      if (hasAutoTable) {
+        doc.autoTable({
+          startY: y,
+          head: [['Prodotto', 'Prezzo', 'Stato', 'Ora']],
+          body: rows,
+          margin: { left: marginX, right: marginX },
+          styles: { fontSize: 11 },
+          theme: 'striped',
+          didDrawPage: renderPageFooter
+        });
+        y = doc.lastAutoTable.finalY + 10;
+      } else {
+        // Fallback compatto nel caso il plugin non sia disponibile
+        doc.setFontSize(12);
+        const colX = [marginX, marginX + 240, marginX + 340, marginX + 420];
+        doc.text('Prodotto', colX[0], y);
+        doc.text('Prezzo', colX[1], y);
+        doc.text('Stato', colX[2], y);
+        doc.text('Ora', colX[3], y);
+        y += 16;
+        for (const row of rows) {
+          ensureSpace(40);
+          doc.text(String(row[0]), colX[0], y);
+          doc.text(String(row[1]), colX[1], y);
+          doc.text(String(row[2]), colX[2], y);
+          doc.text(String(row[3]), colX[3], y);
+          y += 14;
         }
-      });
-      y = doc.lastAutoTable.finalY + 10;
+        renderPageFooter();
+      }
+
       const totalClient = group.purchases
         .filter(p => p.stato === 'acquistato')
         .reduce((sum, p) => sum + Number(p.prezzo), 0);
       overallTotal += totalClient;
+      ensureSpace(40);
       doc.setFontSize(12);
-      doc.text(`Totale cliente: ${formatCurrency(totalClient)}`, 40, y + 10);
-      y += 40;
-      if (y > doc.internal.pageSize.getHeight() - 80) {
-        doc.addPage();
-        y = 60;
-      }
+      doc.text(`Totale cliente: ${formatCurrency(totalClient)}`, marginX, y);
+      y += 28;
     }
 
-    if (y > doc.internal.pageSize.getHeight() - 80) {
-      doc.addPage();
-      y = 60;
-    }
+    ensureSpace(40);
     doc.setFontSize(14);
-    doc.text(`Totale generale: ${formatCurrency(overallTotal)}`, 40, y);
-    doc.save(`ordini-live-${Date.now()}.pdf`);
+    doc.text(`Totale generale: ${formatCurrency(overallTotal)}`, marginX, y);
+    renderPageFooter();
+
+    try {
+      doc.save(`ordini-live-${Date.now()}.pdf`);
+      showToast('PDF creato con successo', 'success');
+    } catch (error) {
+      console.error('Errore durante il salvataggio del PDF', error);
+      showToast('Errore durante il salvataggio del PDF', 'error');
+    }
   }
 
   async function getDataGroupedByClient() {

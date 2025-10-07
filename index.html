@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Registro Live Mystery Product</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha512-/B8oH0+FK/vX1xT1kWzE8DqRL3OjaxAg/P6MqxsVXni4eWh05rq6ArtyTc95xJMu38xpv8uKXu95syEcxrPo1w==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js" integrity="sha512-LlL7sRKqGZo4PMBVXgS5aXoaZySUdkGFUTkOcJCIZy9lEi5Vf3L7hIwrKyYVJZZzKzbwQ6vurSlBLL8GMDIS9A==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <div class="app" data-theme="light">
+    <header class="top-bar">
+      <div class="title-group">
+        <h1>Registro Live Mystery Product</h1>
+        <p class="subtitle">Monitoraggio acquisti in tempo reale</p>
+      </div>
+      <div class="top-actions">
+        <button id="themeToggle" class="ghost">🌗 Tema</button>
+        <button id="exportPdf" class="primary">Export PDF</button>
+        <button id="exportJson" class="ghost">Export JSON</button>
+        <label for="importJsonInput" class="ghost">Import JSON</label>
+        <input type="file" id="importJsonInput" accept="application/json" hidden>
+        <button id="resetDb" class="danger">Reset DB</button>
+      </div>
+    </header>
+
+    <section class="stats-bar" aria-live="polite">
+      <div class="stat"><span id="statClients">0</span><label>Clienti</label></div>
+      <div class="stat"><span id="statPurchases">0</span><label>Righe</label></div>
+      <div class="stat"><span id="statTotal">€0,00</span><label>Totale acquistato</label></div>
+    </section>
+
+    <main class="columns">
+      <section class="column clients" aria-label="Clienti">
+        <div class="search-wrap">
+          <input id="clientSearch" type="search" placeholder="Cerca cliente… (Ctrl+F)" autocomplete="off" />
+          <button id="newClient" class="primary">+ Nuovo cliente</button>
+        </div>
+        <ul id="clientList" class="client-list" role="listbox"></ul>
+      </section>
+
+      <section class="column create" aria-label="Nuovo acquisto">
+        <header class="panel-header">
+          <h2 id="selectedClientName">Seleziona un cliente</h2>
+          <p id="selectedClientNotes" class="notes"></p>
+          <div class="total">Totale cliente: <strong id="clientTotal">€0,00</strong></div>
+        </header>
+        <form id="purchaseForm" autocomplete="off">
+          <label class="field">
+            <span>Nome prodotto</span>
+            <input type="text" id="productName" placeholder="Es. Crema alla vitamina E" required />
+          </label>
+          <div class="field">
+            <span>Prezzo rapido</span>
+            <div class="quick-prices" role="group" aria-label="Prezzi rapidi">
+              <button type="button" data-price="3" data-shortcut="1">3€ • ⌨1</button>
+              <button type="button" data-price="5" data-shortcut="2">5€ • ⌨2</button>
+              <button type="button" data-price="7" data-shortcut="3">7€ • ⌨3</button>
+              <button type="button" data-price="10" data-shortcut="4">10€ • ⌨4</button>
+              <button type="button" data-price="12" data-shortcut="5">12€ • ⌨5</button>
+              <button type="button" data-price="15" data-shortcut="6">15€ • ⌨6</button>
+              <button type="button" data-price="20" data-shortcut="7">20€ • ⌨7</button>
+              <button type="button" data-price="25" data-shortcut="8">25€ • ⌨8</button>
+              <button type="button" data-price="30" data-shortcut="9">30€ • ⌨9</button>
+              <button type="button" data-price="35" data-shortcut="0">35€ • ⌨0</button>
+              <button type="button" data-price="40" data-shortcut="=">40€ • ⌨=</button>
+            </div>
+          </div>
+          <label class="field">
+            <span>Altro €</span>
+            <input type="number" min="0" step="0.01" id="customPrice" placeholder="Inserisci importo" />
+          </label>
+          <div class="field state-toggle" role="radiogroup" aria-label="Stato acquisto">
+            <button type="button" data-state="acquistato" class="active" aria-pressed="true">Acquistato</button>
+            <button type="button" data-state="aggiunto" aria-pressed="false">Aggiunto</button>
+          </div>
+          <button type="submit" id="addPurchase" class="primary large" disabled>Aggiungi (Invio)</button>
+        </form>
+      </section>
+
+      <section class="column history" aria-label="Storico cliente">
+        <div class="history-header">
+          <div class="tabs" role="tablist">
+            <button type="button" class="active" data-filter="tutti" role="tab">Tutti</button>
+            <button type="button" data-filter="aggiunto" role="tab">Aggiunti</button>
+            <button type="button" data-filter="acquistato" role="tab">Acquistati</button>
+          </div>
+          <button id="undoLast" class="ghost" disabled>↩️ Annulla ultimo</button>
+        </div>
+        <table class="history-table">
+          <thead>
+            <tr><th>Ora</th><th>Prodotto</th><th>Prezzo</th><th>Stato</th><th>Azioni</th></tr>
+          </thead>
+          <tbody id="historyBody"></tbody>
+        </table>
+      </section>
+    </main>
+  </div>
+
+  <div id="modal" class="modal" role="dialog" aria-modal="true" hidden>
+    <div class="modal-content" role="document">
+      <header>
+        <h2 id="modalTitle">Nuovo cliente</h2>
+      </header>
+      <form id="modalForm">
+        <label class="field">
+          <span>Nome</span>
+          <input type="text" id="modalNome" required />
+        </label>
+        <label class="field">
+          <span>Cognome</span>
+          <input type="text" id="modalCognome" required />
+        </label>
+        <label class="field">
+          <span>Note</span>
+          <textarea id="modalNote" rows="3" placeholder="Informazioni utili"></textarea>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="ghost" id="modalCancel">Annulla</button>
+          <button type="submit" class="primary" id="modalSave">Salva</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="purchaseModal" class="modal" role="dialog" aria-modal="true" hidden>
+    <div class="modal-content" role="document">
+      <header>
+        <h2 id="purchaseModalTitle">Modifica acquisto</h2>
+      </header>
+      <form id="purchaseModalForm">
+        <label class="field">
+          <span>Nome prodotto</span>
+          <input type="text" id="purchaseModalProduct" required />
+        </label>
+        <label class="field">
+          <span>Prezzo (€)</span>
+          <input type="number" id="purchaseModalPrice" min="0" step="0.01" required />
+        </label>
+        <label class="field">
+          <span>Stato</span>
+          <select id="purchaseModalState">
+            <option value="acquistato">Acquistato</option>
+            <option value="aggiunto">Aggiunto</option>
+          </select>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="ghost" id="purchaseModalCancel">Annulla</button>
+          <button type="submit" class="primary" id="purchaseModalSave">Salva</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+</body>
+</html>

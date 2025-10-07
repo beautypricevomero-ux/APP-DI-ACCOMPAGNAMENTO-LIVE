@@ -432,6 +432,10 @@ input:focus, textarea:focus, select:focus {
   color: var(--warning);
 }
 
+.modal[hidden] {
+  display: none !important;
+}
+
 .modal {
   position: fixed;
   inset: 0;

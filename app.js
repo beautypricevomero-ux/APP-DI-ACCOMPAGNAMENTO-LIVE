@@ -78,7 +78,7 @@
     dom.undoLast = document.getElementById('undoLast');
     dom.toastContainer = document.getElementById('toastContainer');
     dom.themeToggle = document.getElementById('themeToggle');
-    dom.exportPdf = document.getElementById('exportPdf');
+    dom.exportText = document.getElementById('exportText');
     dom.exportJson = document.getElementById('exportJson');
     dom.importJsonInput = document.getElementById('importJsonInput');
     dom.resetDb = document.getElementById('resetDb');
@@ -152,7 +152,7 @@
 
     dom.undoLast.addEventListener('click', undoLastInsert);
     dom.themeToggle.addEventListener('click', toggleTheme);
-    dom.exportPdf.addEventListener('click', exportPdf);
+    dom.exportText.addEventListener('click', exportText);
     dom.exportJson.addEventListener('click', exportJson);
     dom.importJsonInput.addEventListener('change', importJson);
     dom.resetDb.addEventListener('click', resetDatabase);
@@ -868,119 +868,59 @@
     app.dataset.theme = next;
   }
 
-  async function exportPdf() {
+  async function exportText() {
     const allData = await getDataGroupedByClient();
     if (!allData.length) {
       showToast('Nessun dato da esportare', 'error');
       return;
     }
 
-    if (!window.jspdf || !window.jspdf.jsPDF) {
-      console.error('jsPDF non è stato caricato correttamente', window.jspdf);
-      showToast('Errore caricamento libreria PDF', 'error');
-      return;
-    }
+    const now = new Date();
+    const lines = [];
+    lines.push('Registro Live Mystery Product');
+    lines.push(`Ordini Live – ${now.toLocaleString('it-IT')}`);
+    lines.push('');
 
-    let doc;
-    try {
-      const { jsPDF } = window.jspdf;
-      doc = new jsPDF({ unit: 'pt', format: 'a4' });
-    } catch (error) {
-      console.error('Impossibile inizializzare jsPDF', error);
-      showToast('Impossibile avviare l\'export PDF', 'error');
-      return;
-    }
-
-    const hasAutoTable = typeof doc.autoTable === 'function';
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const marginX = 40;
-    const title = `Ordini Live – ${new Date().toLocaleString('it-IT')}`;
-    doc.setFontSize(18);
-    doc.text(title, marginX, 50);
-    let y = 80;
     let overallTotal = 0;
 
-    const renderPageFooter = () => {
-      doc.setFontSize(10);
-      const pageStr = `Pagina ${doc.internal.getNumberOfPages()}`;
-      doc.text(pageStr, pageWidth - marginX, pageHeight - 20, { align: 'right' });
-    };
-
-    const ensureSpace = (amount = 0) => {
-      if (y + amount > pageHeight - 60) {
-        renderPageFooter();
-        doc.addPage();
-        y = 60;
-      }
-    };
-
     for (const group of allData) {
-      ensureSpace(80);
-      const clientTitle = `${group.client.cognome} ${group.client.nome}`;
-      doc.setFontSize(16);
-      doc.text(clientTitle, marginX, y);
-      y += 14;
-
-      const rows = group.purchases.map(p => [
-        p.prodotto,
-        formatCurrency(p.prezzo),
-        capitalize(p.stato),
-        formatTime(p.timestamp)
-      ]);
-
-      if (hasAutoTable) {
-        doc.autoTable({
-          startY: y,
-          head: [['Prodotto', 'Prezzo', 'Stato', 'Ora']],
-          body: rows,
-          margin: { left: marginX, right: marginX },
-          styles: { fontSize: 11 },
-          theme: 'striped',
-          didDrawPage: renderPageFooter
-        });
-        y = doc.lastAutoTable.finalY + 10;
-      } else {
-        // Fallback compatto nel caso il plugin non sia disponibile
-        doc.setFontSize(12);
-        const colX = [marginX, marginX + 240, marginX + 340, marginX + 420];
-        doc.text('Prodotto', colX[0], y);
-        doc.text('Prezzo', colX[1], y);
-        doc.text('Stato', colX[2], y);
-        doc.text('Ora', colX[3], y);
-        y += 16;
-        for (const row of rows) {
-          ensureSpace(40);
-          doc.text(String(row[0]), colX[0], y);
-          doc.text(String(row[1]), colX[1], y);
-          doc.text(String(row[2]), colX[2], y);
-          doc.text(String(row[3]), colX[3], y);
-          y += 14;
-        }
-        renderPageFooter();
+      const { client, purchases } = group;
+      lines.push(`${client.cognome} ${client.nome}`.trim());
+      if (client.note) {
+        lines.push(`Note: ${client.note}`);
       }
 
-      const totalClient = group.purchases
+      for (const purchase of purchases) {
+        const status = capitalize(purchase.stato);
+        const price = formatCurrency(purchase.prezzo);
+        const time = formatTime(purchase.timestamp);
+        lines.push(`  - [${time}] ${purchase.prodotto} • ${price} • ${status}`);
+      }
+
+      const totalClient = purchases
         .filter(p => p.stato === 'acquistato')
         .reduce((sum, p) => sum + Number(p.prezzo), 0);
       overallTotal += totalClient;
-      ensureSpace(40);
-      doc.setFontSize(12);
-      doc.text(`Totale cliente: ${formatCurrency(totalClient)}`, marginX, y);
-      y += 28;
+      lines.push(`  Totale cliente (acquistato): ${formatCurrency(totalClient)}`);
+      lines.push('');
     }
 
-    ensureSpace(40);
-    doc.setFontSize(14);
-    doc.text(`Totale generale: ${formatCurrency(overallTotal)}`, marginX, y);
-    renderPageFooter();
+    lines.push(`Totale generale (acquistato): ${formatCurrency(overallTotal)}`);
 
     try {
-      doc.save(`ordini-live-${Date.now()}.pdf`);
-      showToast('PDF creato con successo', 'success');
+      const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `ordini-live-${Date.now()}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showToast('Documento di testo creato con successo', 'success');
     } catch (error) {
-      console.error('Errore durante il salvataggio del PDF', error);
-      showToast('Errore durante il salvataggio del PDF', 'error');
+      console.error('Errore durante la creazione del documento di testo', error);
+      showToast('Errore durante l\'export testo', 'error');
     }
   }
 
